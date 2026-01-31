@@ -146,7 +146,7 @@ export interface SendMessageRequest {
 
 // OpenClaw WebSocket message types
 export interface OpenClawMessage {
-  id?: string;
+  id?: number;
   method?: string;
   params?: Record<string, unknown>;
   result?: unknown;
@@ -159,4 +159,16 @@ export interface OpenClawSessionInfo {
   peer?: string;
   model?: string;
   status: string;
+}
+
+// OpenClaw history message format (from Gateway)
+export interface OpenClawHistoryMessage {
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  timestamp?: string;
+}
+
+// Agent with OpenClaw session info (extended for UI use)
+export interface AgentWithOpenClaw extends Agent {
+  openclawSession?: OpenClawSession | null;
 }

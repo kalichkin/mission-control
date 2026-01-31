@@ -37,17 +37,6 @@ export default function MissionControlPage() {
         if (tasksRes.ok) setTasks(await tasksRes.json());
         if (conversationsRes.ok) setConversations(await conversationsRes.json());
         if (eventsRes.ok) setEvents(await eventsRes.json());
-
-        // Check OpenClaw connection
-        try {
-          const openclawRes = await fetch('/api/openclaw/status');
-          if (openclawRes.ok) {
-            const status = await openclawRes.json();
-            setIsOnline(status.connected);
-          }
-        } catch {
-          setIsOnline(false);
-        }
       } catch (error) {
         console.error('Failed to load data:', error);
       } finally {
@@ -55,7 +44,26 @@ export default function MissionControlPage() {
       }
     }
 
+    // Check OpenClaw connection separately (non-blocking)
+    async function checkOpenClaw() {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
+
+        const openclawRes = await fetch('/api/openclaw/status', { signal: controller.signal });
+        clearTimeout(timeoutId);
+
+        if (openclawRes.ok) {
+          const status = await openclawRes.json();
+          setIsOnline(status.connected);
+        }
+      } catch {
+        setIsOnline(false);
+      }
+    }
+
     loadData();
+    checkOpenClaw(); // Run in parallel, don't block page load
 
     // Poll for events every 5 seconds
     const eventPoll = setInterval(async () => {

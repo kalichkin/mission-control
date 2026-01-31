@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
-import { Send, Users, Plus, X } from 'lucide-react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { Send, Users, Plus, X, Zap } from 'lucide-react';
 import { useMissionControl } from '@/lib/store';
-import type { Message, Conversation, Agent } from '@/lib/types';
+import type { Message, Conversation, Agent, OpenClawHistoryMessage } from '@/lib/types';
 import { formatDistanceToNow } from 'date-fns';
 
 export function ChatPanel() {
@@ -16,13 +16,30 @@ export function ChatPanel() {
     addMessage,
     agents,
     addEvent,
+    agentOpenClawSessions,
+    openclawMessages,
+    setOpenclawMessages,
   } = useMissionControl();
 
   const [newMessage, setNewMessage] = useState('');
   const [selectedSender, setSelectedSender] = useState<string>('');
   const [showConversationList, setShowConversationList] = useState(true);
   const [showNewConvoModal, setShowNewConvoModal] = useState(false);
+  const [isSendingToOpenClaw, setIsSendingToOpenClaw] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Find if conversation has any OpenClaw-linked agent (other than self)
+  const getOpenClawLinkedAgent = useCallback(() => {
+    if (!currentConversation?.participants) return null;
+    for (const participant of currentConversation.participants) {
+      const session = agentOpenClawSessions[participant.id];
+      if (session) {
+        return { agent: participant, session };
+      }
+    }
+    return null;
+  }, [currentConversation?.participants, agentOpenClawSessions]);
 
   // Load messages when conversation changes
   useEffect(() => {
@@ -32,10 +49,66 @@ export function ChatPanel() {
     }
   }, [currentConversation?.id]);
 
+  // Poll OpenClaw for messages when conversation has linked agent
+  useEffect(() => {
+    const linkedAgent = getOpenClawLinkedAgent();
+
+    // Clear existing poll
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current);
+      pollIntervalRef.current = null;
+    }
+
+    if (!linkedAgent || !currentConversation) {
+      setOpenclawMessages([]);
+      return;
+    }
+
+    // Fetch OpenClaw history immediately
+    const fetchOpenClawHistory = async () => {
+      try {
+        const res = await fetch(`/api/openclaw/sessions/${linkedAgent.session.openclaw_session_id}/history`);
+        if (res.ok) {
+          const data = await res.json();
+          const history = data.history as OpenClawHistoryMessage[];
+
+          // Convert OpenClaw history to Message format
+          const convertedMessages: Message[] = history.map((msg, index) => ({
+            id: `openclaw-${index}-${msg.timestamp || Date.now()}`,
+            conversation_id: currentConversation.id,
+            sender_agent_id: msg.role === 'assistant' ? linkedAgent.agent.id : undefined,
+            content: msg.content,
+            message_type: 'text',
+            created_at: msg.timestamp || new Date().toISOString(),
+            sender: msg.role === 'assistant' ? linkedAgent.agent : undefined,
+            // Mark as OpenClaw message for UI styling
+            metadata: JSON.stringify({ source: 'openclaw', role: msg.role }),
+          }));
+
+          setOpenclawMessages(convertedMessages);
+        }
+      } catch (error) {
+        console.error('Failed to fetch OpenClaw history:', error);
+      }
+    };
+
+    fetchOpenClawHistory();
+
+    // Poll every 3 seconds
+    pollIntervalRef.current = setInterval(fetchOpenClawHistory, 3000);
+
+    return () => {
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+        pollIntervalRef.current = null;
+      }
+    };
+  }, [currentConversation?.id, getOpenClawLinkedAgent, setOpenclawMessages]);
+
   // Auto-scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [messages, openclawMessages]);
 
   const fetchMessages = async (conversationId: string) => {
     try {
@@ -53,11 +126,48 @@ export function ChatPanel() {
     e.preventDefault();
     if (!newMessage.trim() || !currentConversation || !selectedSender) return;
 
+    const linkedAgent = getOpenClawLinkedAgent();
+    const messageContent = newMessage;
+    setNewMessage('');
+
+    // If conversation has an OpenClaw-linked agent, send via OpenClaw
+    if (linkedAgent) {
+      setIsSendingToOpenClaw(true);
+      try {
+        const res = await fetch(`/api/openclaw/sessions/${linkedAgent.session.openclaw_session_id}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: messageContent }),
+        });
+
+        if (res.ok) {
+          const sender = agents.find((a) => a.id === selectedSender);
+          if (sender) {
+            addEvent({
+              id: crypto.randomUUID(),
+              type: 'message_sent',
+              agent_id: selectedSender,
+              message: `${sender.name} sent a message to ${linkedAgent.agent.name} via OpenClaw`,
+              created_at: new Date().toISOString(),
+            });
+          }
+        } else {
+          console.error('Failed to send message via OpenClaw');
+        }
+      } catch (error) {
+        console.error('Failed to send message via OpenClaw:', error);
+      } finally {
+        setIsSendingToOpenClaw(false);
+      }
+      return;
+    }
+
+    // Otherwise, send to local DB (existing behavior)
     const tempMessage: Message = {
       id: crypto.randomUUID(),
       conversation_id: currentConversation.id,
       sender_agent_id: selectedSender,
-      content: newMessage,
+      content: messageContent,
       message_type: 'text',
       created_at: new Date().toISOString(),
       sender: agents.find((a) => a.id === selectedSender),
@@ -65,7 +175,6 @@ export function ChatPanel() {
 
     // Optimistic update
     addMessage(tempMessage);
-    setNewMessage('');
 
     try {
       const res = await fetch(`/api/conversations/${currentConversation.id}/messages`, {
@@ -73,7 +182,7 @@ export function ChatPanel() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           sender_agent_id: selectedSender,
-          content: newMessage,
+          content: messageContent,
         }),
       });
 
@@ -93,6 +202,13 @@ export function ChatPanel() {
       console.error('Failed to send message:', error);
     }
   };
+
+  const linkedAgentInfo = getOpenClawLinkedAgent();
+
+  // Combine and sort messages (local + openclaw) for OpenClaw conversations
+  const displayMessages = linkedAgentInfo
+    ? openclawMessages // For OpenClaw convos, only show OpenClaw messages
+    : messages; // For local convos, show local messages
 
   if (showConversationList) {
     return (
@@ -117,9 +233,17 @@ export function ChatPanel() {
           <Users className="w-5 h-5" />
         </button>
         <div className="flex-1">
-          <h3 className="font-medium text-sm">
-            {currentConversation?.title || 'Conversation'}
-          </h3>
+          <div className="flex items-center gap-2">
+            <h3 className="font-medium text-sm">
+              {currentConversation?.title || 'Conversation'}
+            </h3>
+            {linkedAgentInfo && (
+              <span className="flex items-center gap-1 text-xs bg-green-500/20 text-green-400 px-2 py-0.5 rounded-full">
+                <Zap className="w-3 h-3" />
+                OpenClaw
+              </span>
+            )}
+          </div>
           <p className="text-xs text-mc-text-secondary">
             {currentConversation?.participants?.map((p) => p.name).join(', ')}
           </p>
@@ -137,44 +261,66 @@ export function ChatPanel() {
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-3 space-y-3">
-        {messages.map((message) => (
-          <MessageBubble key={message.id} message={message} />
+        {displayMessages.map((message) => (
+          <MessageBubble key={message.id} message={message} isOpenClaw={!!linkedAgentInfo} />
         ))}
+        {displayMessages.length === 0 && linkedAgentInfo && (
+          <div className="text-center py-8 text-mc-text-secondary text-sm">
+            Send a message to start chatting with {linkedAgentInfo.agent.name} via OpenClaw
+          </div>
+        )}
         <div ref={messagesEndRef} />
       </div>
 
       {/* Input */}
       <form onSubmit={handleSendMessage} className="p-3 border-t border-mc-border">
-        {/* Sender Selection */}
-        <div className="mb-2">
-          <select
-            value={selectedSender}
-            onChange={(e) => setSelectedSender(e.target.value)}
-            className="w-full bg-mc-bg border border-mc-border rounded px-3 py-1.5 text-sm focus:outline-none focus:border-mc-accent"
-          >
-            <option value="">Select who's speaking...</option>
-            {agents.map((agent) => (
-              <option key={agent.id} value={agent.id}>
-                {agent.avatar_emoji} {agent.name}
-              </option>
-            ))}
-          </select>
-        </div>
+        {/* OpenClaw indicator */}
+        {linkedAgentInfo && (
+          <div className="mb-2 flex items-center gap-2 text-xs text-green-400">
+            <Zap className="w-3 h-3" />
+            <span>Messages will be sent to {linkedAgentInfo.agent.name} via OpenClaw Gateway</span>
+          </div>
+        )}
+
+        {/* Sender Selection - hidden for OpenClaw convos since it's always "you" */}
+        {!linkedAgentInfo && (
+          <div className="mb-2">
+            <select
+              value={selectedSender}
+              onChange={(e) => setSelectedSender(e.target.value)}
+              className="w-full bg-mc-bg border border-mc-border rounded px-3 py-1.5 text-sm focus:outline-none focus:border-mc-accent"
+            >
+              <option value="">Select who's speaking...</option>
+              {agents.map((agent) => (
+                <option key={agent.id} value={agent.id}>
+                  {agent.avatar_emoji} {agent.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         <div className="flex gap-2">
           <input
             type="text"
             value={newMessage}
             onChange={(e) => setNewMessage(e.target.value)}
-            placeholder="Type a message..."
+            placeholder={linkedAgentInfo ? `Message ${linkedAgentInfo.agent.name}...` : 'Type a message...'}
             className="flex-1 bg-mc-bg border border-mc-border rounded px-3 py-2 text-sm focus:outline-none focus:border-mc-accent"
+            disabled={isSendingToOpenClaw}
           />
           <button
             type="submit"
-            disabled={!newMessage.trim() || !selectedSender}
-            className="px-4 py-2 bg-mc-accent text-mc-bg rounded hover:bg-mc-accent/90 disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={!newMessage.trim() || (!linkedAgentInfo && !selectedSender) || isSendingToOpenClaw}
+            className="px-4 py-2 bg-mc-accent text-mc-bg rounded hover:bg-mc-accent/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
           >
-            <Send className="w-4 h-4" />
+            {isSendingToOpenClaw ? (
+              <div className="w-4 h-4 border-2 border-mc-bg border-t-transparent rounded-full animate-spin" />
+            ) : linkedAgentInfo ? (
+              <Zap className="w-4 h-4" />
+            ) : (
+              <Send className="w-4 h-4" />
+            )}
           </button>
         </div>
       </form>
@@ -182,20 +328,45 @@ export function ChatPanel() {
   );
 }
 
-function MessageBubble({ message }: { message: Message }) {
+function MessageBubble({ message, isOpenClaw }: { message: Message; isOpenClaw?: boolean }) {
   const sender = message.sender as Agent | undefined;
 
+  // Parse metadata to check if this is an OpenClaw message and get role
+  let openclawRole: string | null = null;
+  if (message.metadata) {
+    try {
+      const meta = JSON.parse(message.metadata);
+      if (meta.source === 'openclaw') {
+        openclawRole = meta.role;
+      }
+    } catch {
+      // Ignore parse errors
+    }
+  }
+
+  // For OpenClaw user messages (your messages), show differently
+  const isYourMessage = openclawRole === 'user';
+
   return (
-    <div className="flex items-start gap-2 animate-slide-in">
-      <div className="text-xl flex-shrink-0">{sender?.avatar_emoji || '🤖'}</div>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-baseline gap-2">
-          <span className="font-medium text-sm">{sender?.name || 'Unknown'}</span>
+    <div className={`flex items-start gap-2 animate-slide-in ${isYourMessage ? 'flex-row-reverse' : ''}`}>
+      <div className="text-xl flex-shrink-0">
+        {isYourMessage ? '👤' : (sender?.avatar_emoji || '🤖')}
+      </div>
+      <div className={`flex-1 min-w-0 ${isYourMessage ? 'text-right' : ''}`}>
+        <div className={`flex items-baseline gap-2 ${isYourMessage ? 'justify-end' : ''}`}>
+          <span className="font-medium text-sm">
+            {isYourMessage ? 'You' : (sender?.name || 'Unknown')}
+          </span>
+          {isOpenClaw && !isYourMessage && (
+            <Zap className="w-3 h-3 text-green-400" />
+          )}
           <span className="text-xs text-mc-text-secondary">
             {formatDistanceToNow(new Date(message.created_at), { addSuffix: true })}
           </span>
         </div>
-        <p className="text-sm mt-1 text-mc-text whitespace-pre-wrap">{message.content}</p>
+        <p className={`text-sm mt-1 text-mc-text whitespace-pre-wrap ${isYourMessage ? 'bg-mc-accent/20 rounded-lg px-3 py-2 inline-block' : ''}`}>
+          {message.content}
+        </p>
       </div>
     </div>
   );

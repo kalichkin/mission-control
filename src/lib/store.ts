@@ -1,7 +1,7 @@
 'use client';
 
 import { create } from 'zustand';
-import type { Agent, Task, Conversation, Message, Event, TaskStatus } from './types';
+import type { Agent, Task, Conversation, Message, Event, TaskStatus, OpenClawSession } from './types';
 
 interface MissionControlState {
   // Data
@@ -11,6 +11,10 @@ interface MissionControlState {
   events: Event[];
   currentConversation: Conversation | null;
   messages: Message[];
+
+  // OpenClaw state
+  agentOpenClawSessions: Record<string, OpenClawSession | null>; // agentId -> session
+  openclawMessages: Message[]; // Messages from OpenClaw (displayed alongside regular messages)
 
   // UI State
   selectedAgent: Agent | null;
@@ -42,6 +46,11 @@ interface MissionControlState {
   // Agent mutations
   updateAgent: (agent: Agent) => void;
   addAgent: (agent: Agent) => void;
+
+  // OpenClaw actions
+  setAgentOpenClawSession: (agentId: string, session: OpenClawSession | null) => void;
+  setOpenclawMessages: (messages: Message[]) => void;
+  addOpenclawMessage: (message: Message) => void;
 }
 
 export const useMissionControl = create<MissionControlState>((set) => ({
@@ -52,6 +61,8 @@ export const useMissionControl = create<MissionControlState>((set) => ({
   events: [],
   currentConversation: null,
   messages: [],
+  agentOpenClawSessions: {},
+  openclawMessages: [],
   selectedAgent: null,
   selectedTask: null,
   isOnline: false,
@@ -98,4 +109,13 @@ export const useMissionControl = create<MissionControlState>((set) => ({
       ),
     })),
   addAgent: (agent) => set((state) => ({ agents: [...state.agents, agent] })),
+
+  // OpenClaw actions
+  setAgentOpenClawSession: (agentId, session) =>
+    set((state) => ({
+      agentOpenClawSessions: { ...state.agentOpenClawSessions, [agentId]: session },
+    })),
+  setOpenclawMessages: (messages) => set({ openclawMessages: messages }),
+  addOpenclawMessage: (message) =>
+    set((state) => ({ openclawMessages: [...state.openclawMessages, message] })),
 }));

@@ -5,6 +5,39 @@ import { readFileSync, existsSync } from 'fs';
 import { homedir } from 'os';
 import { join } from 'path';
 
+// Helper to extract JSON from a response that might have markdown code blocks or surrounding text
+function extractJSON(text: string): object | null {
+  // First, try direct parse
+  try {
+    return JSON.parse(text.trim());
+  } catch {
+    // Continue to other methods
+  }
+
+  // Try to extract from markdown code block (```json ... ``` or ``` ... ```)
+  const codeBlockMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (codeBlockMatch) {
+    try {
+      return JSON.parse(codeBlockMatch[1].trim());
+    } catch {
+      // Continue
+    }
+  }
+
+  // Try to find JSON object in the text (first { to last })
+  const firstBrace = text.indexOf('{');
+  const lastBrace = text.lastIndexOf('}');
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    try {
+      return JSON.parse(text.slice(firstBrace, lastBrace + 1));
+    } catch {
+      // Continue
+    }
+  }
+
+  return null;
+}
+
 // Helper to get messages from transcript file directly
 function getMessagesFromTranscript(sessionKey: string): Array<{ role: string; content: string }> {
   try {
@@ -172,9 +205,22 @@ If planning is complete, respond with JSON:
     if (response) {
       messages.push({ role: 'assistant', content: response, timestamp: Date.now() });
 
-      try {
-        const parsed = JSON.parse(response);
+      // Use extractJSON to handle code blocks and surrounding text
+      const parsed = extractJSON(response) as {
+        status?: string;
+        question?: string;
+        spec?: object;
+        agents?: Array<{
+          name: string;
+          role: string;
+          avatar_emoji?: string;
+          soul_md?: string;
+          instructions?: string;
+        }>;
+        execution_plan?: object;
+      } | null;
 
+      if (parsed) {
         // Check if planning is complete
         if (parsed.status === 'complete') {
           getDb().prepare(`
@@ -192,7 +238,9 @@ If planning is complete, respond with JSON:
             taskId
           );
 
-          // Create the agents in the workspace
+          // Create the agents in the workspace and track first agent for auto-assign
+          let firstAgentId: string | null = null;
+          
           if (parsed.agents && parsed.agents.length > 0) {
             const insertAgent = getDb().prepare(`
               INSERT INTO agents (id, workspace_id, name, role, description, avatar_emoji, status, soul_md, created_at, updated_at)
@@ -201,6 +249,8 @@ If planning is complete, respond with JSON:
 
             for (const agent of parsed.agents) {
               const agentId = crypto.randomUUID();
+              if (!firstAgentId) firstAgentId = agentId;
+              
               insertAgent.run(
                 agentId,
                 taskId,
@@ -213,37 +263,71 @@ If planning is complete, respond with JSON:
             }
           }
 
+          // AUTO-DISPATCH: Assign to first agent and trigger dispatch
+          if (firstAgentId) {
+            // Assign task to the first created agent
+            getDb().prepare(`
+              UPDATE tasks SET assigned_agent_id = ? WHERE id = ?
+            `).run(firstAgentId, taskId);
+
+            console.log(`[Planning] Auto-assigned task ${taskId} to agent ${firstAgentId}`);
+
+            // Trigger dispatch - use localhost since we're in the same process
+            const dispatchUrl = `http://localhost:${process.env.PORT || 3000}/api/tasks/${taskId}/dispatch`;
+            console.log(`[Planning] Triggering dispatch: ${dispatchUrl}`);
+            
+            try {
+              const dispatchRes = await fetch(dispatchUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+              });
+              
+              if (dispatchRes.ok) {
+                const dispatchData = await dispatchRes.json();
+                console.log(`[Planning] Dispatch successful:`, dispatchData);
+              } else {
+                const errorText = await dispatchRes.text();
+                console.error(`[Planning] Dispatch failed (${dispatchRes.status}):`, errorText);
+              }
+            } catch (err) {
+              console.error('[Planning] Auto-dispatch error:', err);
+            }
+          }
+
           return NextResponse.json({
             complete: true,
             spec: parsed.spec,
             agents: parsed.agents,
             executionPlan: parsed.execution_plan,
             messages,
+            autoDispatched: !!firstAgentId,
           });
         }
 
-        // Not complete, return next question
-        getDb().prepare(`
-          UPDATE tasks SET planning_messages = ? WHERE id = ?
-        `).run(JSON.stringify(messages), taskId);
+        // Not complete, return next question if it has one
+        if (parsed.question) {
+          getDb().prepare(`
+            UPDATE tasks SET planning_messages = ? WHERE id = ?
+          `).run(JSON.stringify(messages), taskId);
 
-        return NextResponse.json({
-          complete: false,
-          currentQuestion: parsed,
-          messages,
-        });
-      } catch {
-        // Response wasn't valid JSON
-        getDb().prepare(`
-          UPDATE tasks SET planning_messages = ? WHERE id = ?
-        `).run(JSON.stringify(messages), taskId);
-
-        return NextResponse.json({
-          complete: false,
-          rawResponse: response,
-          messages,
-        });
+          return NextResponse.json({
+            complete: false,
+            currentQuestion: parsed,
+            messages,
+          });
+        }
       }
+      
+      // Response wasn't valid JSON or didn't have expected structure
+      getDb().prepare(`
+        UPDATE tasks SET planning_messages = ? WHERE id = ?
+      `).run(JSON.stringify(messages), taskId);
+
+      return NextResponse.json({
+        complete: false,
+        rawResponse: response,
+        messages,
+      });
     }
 
     return NextResponse.json({

@@ -8,6 +8,39 @@ import { join } from 'path';
 // Planning session prefix for OpenClaw (must match agent:main: format)
 const PLANNING_SESSION_PREFIX = 'agent:main:planning:';
 
+// Helper to extract JSON from a response that might have markdown code blocks or surrounding text
+function extractJSON(text: string): object | null {
+  // First, try direct parse
+  try {
+    return JSON.parse(text.trim());
+  } catch {
+    // Continue to other methods
+  }
+
+  // Try to extract from markdown code block (```json ... ``` or ``` ... ```)
+  const codeBlockMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (codeBlockMatch) {
+    try {
+      return JSON.parse(codeBlockMatch[1].trim());
+    } catch {
+      // Continue
+    }
+  }
+
+  // Try to find JSON object in the text (first { to last })
+  const firstBrace = text.indexOf('{');
+  const lastBrace = text.lastIndexOf('}');
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    try {
+      return JSON.parse(text.slice(firstBrace, lastBrace + 1));
+    } catch {
+      // Continue
+    }
+  }
+
+  return null;
+}
+
 // Helper to get messages from transcript file directly
 function getMessagesFromTranscript(sessionKey: string): Array<{ role: string; content: string }> {
   try {
@@ -102,14 +135,10 @@ export async function GET(
     let currentQuestion = null;
     
     if (lastAssistantMessage) {
-      try {
-        // Try to parse as structured planning response
-        const parsed = JSON.parse(lastAssistantMessage.content);
-        if (parsed.question) {
-          currentQuestion = parsed;
-        }
-      } catch {
-        // Not JSON, might be a plain message
+      // Use extractJSON to handle code blocks and surrounding text
+      const parsed = extractJSON(lastAssistantMessage.content);
+      if (parsed && 'question' in parsed) {
+        currentQuestion = parsed;
       }
     }
 
@@ -228,28 +257,22 @@ Respond with ONLY valid JSON in this format:
     }
 
     if (response) {
-      // Parse and store the response
-      try {
-        const parsed = JSON.parse(response);
-        messages.push({ role: 'assistant', content: response, timestamp: Date.now() });
-        
-        getDb().prepare(`
-          UPDATE tasks SET planning_messages = ? WHERE id = ?
-        `).run(JSON.stringify(messages), taskId);
+      // Parse and store the response using extractJSON to handle code blocks
+      messages.push({ role: 'assistant', content: response, timestamp: Date.now() });
+      
+      getDb().prepare(`
+        UPDATE tasks SET planning_messages = ? WHERE id = ?
+      `).run(JSON.stringify(messages), taskId);
 
+      const parsed = extractJSON(response);
+      if (parsed && 'question' in parsed) {
         return NextResponse.json({
           success: true,
           sessionKey,
           currentQuestion: parsed,
           messages,
         });
-      } catch {
-        // Response wasn't valid JSON, store it anyway
-        messages.push({ role: 'assistant', content: response, timestamp: Date.now() });
-        getDb().prepare(`
-          UPDATE tasks SET planning_messages = ? WHERE id = ?
-        `).run(JSON.stringify(messages), taskId);
-
+      } else {
         return NextResponse.json({
           success: true,
           sessionKey,

@@ -184,7 +184,7 @@ export function AgentsSidebar({ workspaceId }: AgentsSidebarProps) {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="font-medium text-sm truncate">{agent.name}</span>
-                    {agent.is_master && (
+                    {!!agent.is_master && (
                       <span className="text-xs text-mc-accent-yellow">★</span>
                     )}
                   </div>
@@ -204,7 +204,7 @@ export function AgentsSidebar({ workspaceId }: AgentsSidebarProps) {
               </button>
 
               {/* OpenClaw Connect Button - show for master agents */}
-              {agent.is_master && (
+              {!!agent.is_master && (
                 <div className="px-2 pb-2">
                   <button
                     onClick={(e) => handleConnectToOpenClaw(agent, e)}

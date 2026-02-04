@@ -124,8 +124,6 @@ export function WorkspaceDashboard() {
 function WorkspaceCard({ workspace, onDelete }: { workspace: WorkspaceStats; onDelete: (id: string) => void }) {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const activeCount = workspace.taskCounts.in_progress + workspace.taskCounts.assigned + workspace.taskCounts.testing;
-  const pendingCount = workspace.taskCounts.planning + workspace.taskCounts.inbox;
 
   const handleDelete = async (e: React.MouseEvent) => {
     e.preventDefault();
@@ -179,33 +177,15 @@ function WorkspaceCard({ workspace, onDelete }: { workspace: WorkspaceStats; onD
           </div>
         </div>
 
-        <div className="space-y-3">
-          {/* Task stats */}
-          <div className="grid grid-cols-3 gap-3">
-            <div className="bg-mc-bg rounded-lg p-3 text-center">
-              <div className="text-2xl font-bold text-mc-accent-yellow">{pendingCount}</div>
-              <div className="text-xs text-mc-text-secondary">Pending</div>
-            </div>
-            <div className="bg-mc-bg rounded-lg p-3 text-center">
-              <div className="text-2xl font-bold text-mc-accent">{activeCount}</div>
-              <div className="text-xs text-mc-text-secondary">Active</div>
-            </div>
-            <div className="bg-mc-bg rounded-lg p-3 text-center">
-              <div className="text-2xl font-bold text-mc-accent-green">{workspace.taskCounts.done}</div>
-              <div className="text-xs text-mc-text-secondary">Done</div>
-            </div>
+        {/* Simple task/agent counts */}
+        <div className="flex items-center gap-4 text-sm text-mc-text-secondary mt-4">
+          <div className="flex items-center gap-1">
+            <CheckSquare className="w-4 h-4" />
+            <span>{workspace.taskCounts.total} tasks</span>
           </div>
-
-          {/* Bottom stats */}
-          <div className="flex items-center justify-between pt-3 border-t border-mc-border text-sm text-mc-text-secondary">
-            <div className="flex items-center gap-1">
-              <CheckSquare className="w-4 h-4" />
-              <span>{workspace.taskCounts.total} tasks</span>
-            </div>
-            <div className="flex items-center gap-1">
-              <Users className="w-4 h-4" />
-              <span>{workspace.agentCount} agents</span>
-            </div>
+          <div className="flex items-center gap-1">
+            <Users className="w-4 h-4" />
+            <span>{workspace.agentCount} agents</span>
           </div>
         </div>
       </div>

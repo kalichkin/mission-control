@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { getOpenClawClient } from '@/lib/openclaw/client';
-import { readFileSync, existsSync } from 'fs';
-import { homedir } from 'os';
-import { join } from 'path';
+// File system imports removed - using OpenClaw API instead
 
 // Planning session prefix for OpenClaw (must match agent:main: format)
 const PLANNING_SESSION_PREFIX = 'agent:main:planning:';
@@ -41,63 +39,39 @@ function extractJSON(text: string): object | null {
   return null;
 }
 
-// Helper to get messages from transcript file directly
-function getMessagesFromTranscript(sessionKey: string): Array<{ role: string; content: string }> {
+// Helper to get messages from OpenClaw API
+async function getMessagesFromOpenClaw(sessionKey: string): Promise<Array<{ role: string; content: string }>> {
   try {
-    // Get session info to find transcript path
-    const sessionsDir = join(homedir(), '.openclaw', 'agents', 'main', 'sessions');
-    const sessionsFile = join(sessionsDir, 'sessions.json');
-    
-    if (!existsSync(sessionsFile)) {
-      console.log('[Planning] Sessions file not found');
-      return [];
+    const client = getOpenClawClient();
+    if (!client.isConnected()) {
+      await client.connect();
     }
     
-    const sessions = JSON.parse(readFileSync(sessionsFile, 'utf-8'));
+    // Use chat.history API to get session messages
+    const result = await client.call<{ messages: Array<{ role: string; content: Array<{ type: string; text?: string }> }> }>('chat.history', {
+      sessionKey,
+      limit: 20,
+    });
     
-    // Sessions are stored with key as the object key, not a property
-    const session = sessions[sessionKey] as { sessionId?: string } | undefined;
-    
-    if (!session) {
-      console.log('[Planning] Session not found for key:', sessionKey);
-      return [];
-    }
-    
-    // Transcript file is named after sessionId
-    const transcriptPath = join(sessionsDir, `${session.sessionId}.jsonl`);
-    
-    if (!existsSync(transcriptPath)) {
-      console.log('[Planning] Transcript file not found:', transcriptPath);
-      return [];
-    }
-    
-    // Parse JSONL transcript
-    const content = readFileSync(transcriptPath, 'utf-8');
-    const lines = content.trim().split('\n');
     const messages: Array<{ role: string; content: string }> = [];
     
-    for (const line of lines) {
-      try {
-        const entry = JSON.parse(line);
-        if (entry.type === 'message' && entry.message?.role === 'assistant') {
-          // Extract text content from assistant messages
-          const textContent = entry.message.content?.find((c: { type: string }) => c.type === 'text');
-          if (textContent?.text) {
-            messages.push({
-              role: 'assistant',
-              content: textContent.text
-            });
-          }
+    for (const msg of result.messages || []) {
+      if (msg.role === 'assistant') {
+        // Extract text content from assistant messages
+        const textContent = msg.content?.find((c) => c.type === 'text');
+        if (textContent?.text) {
+          messages.push({
+            role: 'assistant',
+            content: textContent.text
+          });
         }
-      } catch {
-        // Skip invalid lines
       }
     }
     
-    console.log('[Planning] Found', messages.length, 'assistant messages in transcript');
+    console.log('[Planning] Found', messages.length, 'assistant messages via API');
     return messages;
   } catch (err) {
-    console.error('[Planning] Failed to read transcript:', err);
+    console.error('[Planning] Failed to get messages from OpenClaw:', err);
     return [];
   }
 }
@@ -236,14 +210,14 @@ Respond with ONLY valid JSON in this format:
     `).run(sessionKey, JSON.stringify(messages), taskId);
 
     // Poll for response (give OpenClaw time to process)
-    // Read directly from transcript file as primary method
+    // Use OpenClaw API to get messages
     let response = null;
     for (let i = 0; i < 30; i++) { // Poll for up to 30 seconds
       await new Promise(resolve => setTimeout(resolve, 1000));
       
-      // Read messages directly from transcript file
-      const transcriptMessages = getMessagesFromTranscript(sessionKey);
-      console.log('[Planning] Transcript messages:', transcriptMessages.length);
+      // Get messages via OpenClaw API
+      const transcriptMessages = await getMessagesFromOpenClaw(sessionKey);
+      console.log('[Planning] API messages:', transcriptMessages.length);
       
       if (transcriptMessages.length > 0) {
         // Get the last assistant message

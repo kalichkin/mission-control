@@ -17,15 +17,14 @@ interface OrchestraStatusResponse {
  * GET /api/openclaw/orchestra
  *
  * Checks if there are other orchestrators (master agents) available in the project/workspace.
- * Returns true if there are other master agents that could handle tasks
- * instead of going to Charlie.
+ * Returns true if there are additional master agents beyond the default one.
  */
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const workspaceId = searchParams.get('workspace_id') || 'default';
 
-    // Check for other master agents in the workspace
+    // Get all master agents in the workspace
     const orchestrators = queryAll<{
       id: string;
       name: string;
@@ -37,19 +36,19 @@ export async function GET(request: NextRequest) {
        WHERE is_master = 1
        AND workspace_id = ?
        AND status != 'offline'
-       ORDER BY name ASC`,
+       ORDER BY created_at ASC`,
       [workspaceId]
     );
 
-    // Exclude Charlie (the default master agent) from the count
-    const nonCharlieOrchestrators = orchestrators.filter(a => a.name !== 'Charlie');
-    const hasOtherOrchestrators = nonCharlieOrchestrators.length > 0;
+    // Exclude the default (first-created) master agent from the count
+    const additionalOrchestrators = orchestrators.slice(1);
+    const hasOtherOrchestrators = additionalOrchestrators.length > 0;
 
     return NextResponse.json<OrchestraStatusResponse>({
       hasOtherOrchestrators,
-      orchestratorCount: nonCharlieOrchestrators.length,
+      orchestratorCount: additionalOrchestrators.length,
       workspaceId,
-      orchestrators: nonCharlieOrchestrators,
+      orchestrators: additionalOrchestrators,
     });
   } catch (error) {
     console.error('Failed to check orchestra status:', error);

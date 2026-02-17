@@ -72,7 +72,7 @@ export async function POST(request: Request, { params }: RouteParams) {
       }
     }
 
-    // Prefix message with [Mission Control] so Charlie knows the source
+    // Prefix message with [Mission Control] so the agent knows the source
     const prefixedContent = `[Mission Control] ${content}`;
     await client.sendMessage(id, prefixedContent);
 

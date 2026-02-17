@@ -152,7 +152,7 @@ Counts openclaw_sessions where status='active' and session_type='subagent'
 
 ### 5. Orchestration Integration
 
-Charlie's workflow when orchestrating tasks:
+The orchestrator's workflow when orchestrating tasks:
 
 ```typescript
 // 1. Task found in inbox
@@ -164,7 +164,7 @@ await fetch(`http://localhost:4000/api/tasks/${task.id}/activities`, {
   body: JSON.stringify({
     activity_type: 'updated',
     message: 'Task triaged and assigned to Developer agent',
-    agent_id: charlieAgentId
+    agent_id: orchestratorAgentId
   })
 });
 
@@ -286,7 +286,7 @@ broadcast({
 - [ ] Activity log shows all actions chronologically
 - [ ] Deliverables display with file paths
 - [ ] Agent counter updates when sub-agents spawn
-- [ ] Charlie's orchestration posts to new endpoints
+- [ ] The orchestrator's orchestration posts to new endpoints
 - [ ] No memory leaks from SSE connections
 - [ ] Works on production server after git pull
 

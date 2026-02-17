@@ -104,7 +104,7 @@ If planning is complete, respond with JSON:
       console.log('[Planning Answer] Send successful, result:', sendResult);
     } catch (sendError) {
       console.error('[Planning Answer] Failed to send to OpenClaw:', sendError);
-      return NextResponse.json({ error: 'Failed to send answer to Charlie: ' + (sendError as Error).message }, { status: 500 });
+      return NextResponse.json({ error: 'Failed to send answer to orchestrator: ' + (sendError as Error).message }, { status: 500 });
     }
 
     // Update messages in DB

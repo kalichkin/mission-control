@@ -269,7 +269,7 @@ POST /api/tasks/[id]/activities
 
 ## 📝 Usage Examples
 
-### For Orchestrating Agent (Charlie)
+### For Orchestrating Agent (the orchestrator)
 
 ```typescript
 // 1. Create task
@@ -287,7 +287,7 @@ await fetch(`/api/tasks/${task.id}/activities`, {
   body: JSON.stringify({
     activity_type: 'updated',
     message: 'Triaged and assigned to Developer',
-    agent_id: charlieId,
+    agent_id: orchestratorId,
   })
 });
 

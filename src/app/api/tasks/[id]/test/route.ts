@@ -1,7 +1,7 @@
 /**
  * Task Test API
  * Runs automated browser tests on task deliverables
- * Called by orchestrating LLM (Charlie) to verify work before human review
+ * Called by the orchestrating LLM (master agent) to verify work before human review
  *
  * Enhanced validations:
  * - JavaScript console error detection

@@ -74,7 +74,7 @@ export async function PATCH(
 
       if (!updatingAgent || !updatingAgent.is_master) {
         return NextResponse.json(
-          { error: 'Forbidden: only master agent (Charlie) can approve tasks' },
+          { error: 'Forbidden: only the master agent can approve tasks' },
           { status: 403 }
         );
       }

@@ -92,7 +92,13 @@ export async function POST(
       return NextResponse.json({ error: 'Planning already started', sessionKey: task.planning_session_key }, { status: 400 });
     }
 
-    // Check if there are other orchestrators available before starting planning with Charlie
+    // Check if there are other orchestrators available before starting planning with the default master agent
+    // Get the default master agent for this workspace
+    const defaultMaster = queryOne<{ id: string }>(
+      `SELECT id FROM agents WHERE is_master = 1 AND workspace_id = ? ORDER BY created_at ASC LIMIT 1`,
+      [task.workspace_id]
+    );
+
     const otherOrchestrators = queryAll<{
       id: string;
       name: string;
@@ -101,16 +107,16 @@ export async function POST(
       `SELECT id, name, role
        FROM agents
        WHERE is_master = 1
-       AND name != 'Charlie'
+       AND id != ?
        AND workspace_id = ?
        AND status != 'offline'`,
-      [task.workspace_id]
+      [defaultMaster?.id ?? '', task.workspace_id]
     );
 
     if (otherOrchestrators.length > 0) {
       return NextResponse.json({
         error: 'Other orchestrators available',
-        message: `There ${otherOrchestrators.length === 1 ? 'is' : 'are'} ${otherOrchestrators.length} other orchestrator${otherOrchestrators.length === 1 ? '' : 's'} available in this workspace: ${otherOrchestrators.map(o => o.name).join(', ')}. Please assign this task to them directly or use their planning instead of Charlie.`,
+        message: `There ${otherOrchestrators.length === 1 ? 'is' : 'are'} ${otherOrchestrators.length} other orchestrator${otherOrchestrators.length === 1 ? '' : 's'} available in this workspace: ${otherOrchestrators.map(o => o.name).join(', ')}. Please assign this task to them directly.`,
         otherOrchestrators,
       }, { status: 409 }); // 409 Conflict
     }

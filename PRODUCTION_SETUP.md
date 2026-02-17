@@ -59,7 +59,7 @@ npm run db:seed
 ```
 
 This creates the database and seeds it with:
-- Charlie (master agent)
+- the master agent
 - Sample tasks
 - Default business
 
@@ -311,7 +311,7 @@ ls -la mission-control.db
 
 - [Agent Protocol Documentation](docs/AGENT_PROTOCOL.md)
 - [Real-Time Implementation](REALTIME_IMPLEMENTATION_SUMMARY.md)
-- [Charlie Orchestration Guide](src/lib/charlie-orchestration.ts)
+- [the orchestrator Orchestration Guide](src/lib/orchestration.ts)
 - [Verification Checklist](VERIFICATION_CHECKLIST.md)
 
 ---

@@ -1,10 +1,10 @@
 /**
- * Charlie's Orchestration Helper
+ * Orchestration Helper
  * 
- * This module provides helper functions for Charlie (master agent) to properly
+ * This module provides helper functions for the master agent (orchestrator) to properly
  * log activities, deliverables, and manage sub-agent sessions when orchestrating tasks.
  * 
- * Usage from Charlie's context:
+ * Usage:
  * - Log activities as sub-agents work
  * - Track deliverables created
  * - Register sub-agent sessions
@@ -232,13 +232,13 @@ export async function onSubAgentCompleted(params: {
 }
 
 /**
- * Example usage template for Charlie:
+ * Example usage:
  * 
  * ```typescript
- * import * as charlie from '@/lib/charlie-orchestration';
+ * import * as orchestrator from '@/lib/orchestration';
  * 
  * // When spawning a sub-agent:
- * await charlie.onSubAgentSpawned({
+ * await orchestrator.onSubAgentSpawned({
  *   taskId: 'task-123',
  *   sessionId: 'agent:main:subagent:abc123',
  *   agentName: 'mission-control-integration-fixes',
@@ -246,26 +246,26 @@ export async function onSubAgentCompleted(params: {
  * });
  * 
  * // During work:
- * await charlie.logActivity({
+ * await orchestrator.logActivity({
  *   taskId: 'task-123',
  *   activityType: 'updated',
  *   message: 'Fixed SSE broadcast in dispatch endpoint',
  * });
  * 
  * // When complete:
- * await charlie.onSubAgentCompleted({
+ * await orchestrator.onSubAgentCompleted({
  *   taskId: 'task-123',
  *   sessionId: 'agent:main:subagent:abc123',
  *   agentName: 'mission-control-integration-fixes',
  *   summary: 'All integration issues fixed and tested',
  *   deliverables: [
  *     { type: 'file', title: 'Updated dispatch route', path: 'src/app/api/tasks/[id]/dispatch/route.ts' },
- *     { type: 'file', title: 'Orchestration helper', path: 'src/lib/charlie-orchestration.ts' },
+ *     { type: 'file', title: 'Orchestration helper', path: 'src/lib/orchestration.ts' },
  *   ],
  * });
  * 
  * // Before approving (review -> done):
- * const hasDeliverables = await charlie.verifyTaskHasDeliverables('task-123');
+ * const hasDeliverables = await orchestrator.verifyTaskHasDeliverables('task-123');
  * if (!hasDeliverables) {
  *   console.log('⚠️ Task has no deliverables - cannot approve');
  *   return;

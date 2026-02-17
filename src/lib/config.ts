@@ -12,7 +12,7 @@ export interface MissionControlConfig {
   workspaceBasePath: string; // e.g., ~/Documents/Shared
   projectsPath: string; // e.g., ${workspaceBasePath}/projects
   
-  // Mission Control API URL (for Charlie orchestration)
+  // Mission Control API URL (for orchestration)
   missionControlUrl: string; // Auto-detected or manually set
   
   // OpenClaw Gateway settings (these come from .env on server)
@@ -114,7 +114,7 @@ export function expandPath(path: string): string {
 
 /**
  * Get Mission Control URL for API calls
- * Used by charlie-orchestration and other server-side modules
+ * Used by orchestration module and other server-side modules
  */
 export function getMissionControlUrl(): string {
   // Server-side: use env var or auto-detect

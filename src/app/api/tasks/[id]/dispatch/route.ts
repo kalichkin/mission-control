@@ -50,9 +50,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'Assigned agent not found' }, { status: 404 });
     }
 
-    // Check if dispatching to Charlie (master agent) while there are other orchestrators available
-    if (agent.is_master && agent.name === 'Charlie') {
-      // Check for other master agents in the same workspace (excluding Charlie)
+    // Check if dispatching to the master agent while there are other orchestrators available
+    if (agent.is_master) {
+      // Check for other master agents in the same workspace (excluding this one)
       const otherOrchestrators = queryAll<{
         id: string;
         name: string;
@@ -61,17 +61,17 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         `SELECT id, name, role
          FROM agents
          WHERE is_master = 1
-         AND name != 'Charlie'
+         AND id != ?
          AND workspace_id = ?
          AND status != 'offline'`,
-        [task.workspace_id]
+        [agent.id, task.workspace_id]
       );
 
       if (otherOrchestrators.length > 0) {
         return NextResponse.json({
           success: false,
           warning: 'Other orchestrators available',
-          message: `There ${otherOrchestrators.length === 1 ? 'is' : 'are'} ${otherOrchestrators.length} other orchestrator${otherOrchestrators.length === 1 ? '' : 's'} available in this workspace: ${otherOrchestrators.map(o => o.name).join(', ')}. Consider assigning this task to them instead of Charlie.`,
+          message: `There ${otherOrchestrators.length === 1 ? 'is' : 'are'} ${otherOrchestrators.length} other orchestrator${otherOrchestrators.length === 1 ? '' : 's'} available in this workspace: ${otherOrchestrators.map(o => o.name).join(', ')}. Consider assigning this task to them instead.`,
           otherOrchestrators,
         }, { status: 409 }); // 409 Conflict - indicating there's an alternative
       }
@@ -166,7 +166,7 @@ Create this directory and save all deliverables there.
 When complete, reply with:
 \`TASK_COMPLETE: [brief summary of what you did]\`
 
-If you need help or clarification, ask me (Charlie).`;
+If you need help or clarification, ask the orchestrator.`;
 
     // Send message to agent's session using chat.send
     try {

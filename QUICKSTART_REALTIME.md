@@ -62,7 +62,7 @@ When you click on a task, you now see **4 tabs**:
 - Live count of running sub-agents
 - Updates every 10 seconds
 
-## 🛠️ For Charlie: API Integration
+## 🛠️ For the orchestrator: API Integration
 
 ### Logging Activities
 
@@ -233,4 +233,4 @@ Enjoy the new transparency! 🦞✨
 
 ---
 
-**Questions?** Check the docs above or ask Charlie.
+**Questions?** Check the docs above or ask the orchestrator.

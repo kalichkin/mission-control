@@ -172,7 +172,7 @@ export function PlanningTab({ taskId, onSpecLocked }: PlanningTabProps) {
     // Don't clear selection - user can retry with same selection
     pollingTimeoutRef.current = setTimeout(() => {
       stopPolling();
-      setError('Charlie is taking too long to respond. Please try submitting again or refresh the page.');
+      setError('The orchestrator is taking too long to respond. Please try submitting again or refresh the page.');
     }, 30000);
   }, [pollForUpdates, stopPolling]);
 
@@ -635,7 +635,7 @@ export function PlanningTab({ taskId, onSpecLocked }: PlanningTabProps) {
               {isSubmittingAnswer && !submitting && (
                 <div className="mt-4 flex items-center justify-center gap-2 text-sm text-mc-text-secondary">
                   <Loader2 className="w-4 h-4 animate-spin text-mc-accent" />
-                  <span>Waiting for Charlie to respond...</span>
+                  <span>Waiting for response...</span>
                 </div>
               )}
             </div>
@@ -645,7 +645,7 @@ export function PlanningTab({ taskId, onSpecLocked }: PlanningTabProps) {
             <div className="text-center">
               <Loader2 className="w-8 h-8 animate-spin text-mc-accent mx-auto mb-2" />
               <p className="text-mc-text-secondary">
-                {isWaitingForResponse ? 'Waiting for Charlie to respond...' : 'Waiting for next question...'}
+                {isWaitingForResponse ? 'Waiting for response...' : 'Waiting for next question...'}
               </p>
             </div>
           </div>
@@ -661,7 +661,7 @@ export function PlanningTab({ taskId, onSpecLocked }: PlanningTabProps) {
           <div className="p-3 space-y-2 max-h-48 overflow-y-auto bg-mc-bg">
             {state.messages.map((msg, i) => (
               <div key={i} className={`text-sm ${msg.role === 'user' ? 'text-mc-accent' : 'text-mc-text-secondary'}`}>
-                <span className="font-medium">{msg.role === 'user' ? 'You' : 'Charlie'}:</span>{' '}
+                <span className="font-medium">{msg.role === 'user' ? 'You' : 'Orchestrator'}:</span>{' '}
                 <span className="opacity-75">{msg.content.substring(0, 100)}...</span>
               </div>
             ))}

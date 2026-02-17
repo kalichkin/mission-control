@@ -21,13 +21,13 @@ This document describes how OpenClaw agents interact with Mission Control.
    Please work on this task. When complete, reply with:
    `TASK_COMPLETE: [brief summary of what you did]`
    
-   If you need help or clarification, ask me (Charlie).
+   If you need help or clarification, ask me (the orchestrator).
    ```
 
 3. **Agent works on task**
    - Task automatically moves to "IN PROGRESS"
    - Agent status updates to "working"
-   - Agent can ask Charlie for help via normal conversation
+   - Agent can ask the orchestrator for help via normal conversation
 
 4. **Agent completes task**
    - Agent replies with completion message:
@@ -38,11 +38,11 @@ This document describes how OpenClaw agents interact with Mission Control.
    - Task automatically moves to "REVIEW"
    - Agent status returns to "standby"
 
-5. **Charlie reviews work**
-   - Charlie checks agent's session history
-   - Charlie inspects deliverables/code
-   - If approved: Charlie moves to "DONE"
-   - If needs work: Charlie moves back with feedback
+5. **the orchestrator reviews work**
+   - the orchestrator checks agent's session history
+   - the orchestrator inspects deliverables/code
+   - If approved: the orchestrator moves to "DONE"
+   - If needs work: the orchestrator moves back with feedback
 
 ## Completion Message Format
 
@@ -78,21 +78,21 @@ I finished the task successfully!
 
 If you're stuck or need clarification:
 
-1. **Ask Charlie directly** in your session
+1. **Ask the orchestrator directly** in your session
    ```
-   @Charlie - Question about the authentication task: Should we support
+   @the orchestrator - Question about the authentication task: Should we support
    OAuth providers or just email/password for now?
    ```
 
 2. **Request collaboration** with another agent
    ```
-   @Charlie - I need help from Design agent to create the login UI.
+   @the orchestrator - I need help from Design agent to create the login UI.
    Can you coordinate?
    ```
 
 3. **Report blockers**
    ```
-   @Charlie - Blocked on this task: Missing API credentials for the
+   @the orchestrator - Blocked on this task: Missing API credentials for the
    third-party service. Can you provide?
    ```
 
@@ -107,7 +107,7 @@ If you're stuck or need clarification:
 ### Session Linking
 - Agents are automatically linked to OpenClaw when first task is assigned
 - Session remains active for future tasks
-- Charlie can manually link/unlink agents via Mission Control UI
+- the orchestrator can manually link/unlink agents via Mission Control UI
 
 ## Status Transitions
 
@@ -115,7 +115,7 @@ If you're stuck or need clarification:
 - **INBOX**: Unassigned, awaiting triage
 - **ASSIGNED**: Assigned to agent, auto-dispatched
 - **IN PROGRESS**: Agent actively working
-- **REVIEW**: Completed, awaiting Charlie's approval
+- **REVIEW**: Completed, awaiting The orchestrator's approval
 - **DONE**: Approved and closed
 
 ### Agent Statuses
@@ -129,7 +129,7 @@ Agents don't call Mission Control APIs directly. All interaction happens through
 
 1. **Receiving tasks** via OpenClaw session message
 2. **Reporting completion** via TASK_COMPLETE message
-3. **Asking questions** via normal conversation with Charlie
+3. **Asking questions** via normal conversation with the orchestrator
 
 Mission Control handles:
 - Task routing
@@ -137,9 +137,9 @@ Mission Control handles:
 - Event logging
 - Workflow enforcement
 
-## Charlie's Responsibilities
+## The orchestrator's Responsibilities
 
-As master orchestrator, Charlie:
+As master orchestrator, the orchestrator:
 
 - **Triages incoming tasks** from humans
 - **Assigns work** to appropriate specialist agents
@@ -149,7 +149,7 @@ As master orchestrator, Charlie:
 - **Provides guidance** when agents are stuck
 - **Enforces quality standards**
 
-Only Charlie (master agent with `is_master = 1`) can approve tasks from REVIEW → DONE.
+Only the orchestrator (master agent with `is_master = 1`) can approve tasks from REVIEW → DONE.
 
 ## Error Handling
 
@@ -164,7 +164,7 @@ Only Charlie (master agent with `is_master = 1`) can approve tasks from REVIEW �
 - Manually move task via UI if needed
 
 ### If stuck in review:
-- Charlie must manually approve (drag to DONE)
+- the orchestrator must manually approve (drag to DONE)
 - Only master agent can approve
 - Provides quality control checkpoint
 
@@ -184,20 +184,20 @@ Only Charlie (master agent with `is_master = 1`) can approve tasks from REVIEW �
          ↓
 [System] Auto-moves to REVIEW
          ↓
-[Charlie] Reviews docs/blog/ai-agents.md
+[the orchestrator] Reviews docs/blog/ai-agents.md
          ↓
-[Charlie] Approves → moves to DONE
+[the orchestrator] Approves → moves to DONE
          ↓
 [Human] Publishes blog post
 ```
 
 ## Best Practices
 
-1. **Be specific in completion summaries** - help Charlie review faster
-2. **Ask for help early** - don't spin wheels, ping Charlie
+1. **Be specific in completion summaries** - help the orchestrator review faster
+2. **Ask for help early** - don't spin wheels, ping the orchestrator
 3. **Document your work** - leave breadcrumbs for review
 4. **One task at a time** - focus before moving to next
-5. **Update progress** - if task will take a while, check in with Charlie
+5. **Update progress** - if task will take a while, check in with the orchestrator
 
 ## Future Enhancements
 

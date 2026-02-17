@@ -1,16 +1,16 @@
-# Charlie's Task Orchestration Workflow
+# Task Orchestration Workflow
 
-This guide explains how Charlie (master agent) should orchestrate sub-agents to properly integrate with Mission Control.
+This guide explains how the master agent should orchestrate sub-agents to properly integrate with Mission Control.
 
 ## Overview
 
-When Charlie spawns a sub-agent to work on a task, **all activities, deliverables, and session info must be logged** to Mission Control so the UI shows real-time progress.
+When the orchestrator spawns a sub-agent to work on a task, **all activities, deliverables, and session info must be logged** to Mission Control so the UI shows real-time progress.
 
 ## Import the Helper
 
 ```typescript
-// From Node.js context (Charlie's environment)
-import * as charlie from '@/lib/charlie-orchestration';
+// From Node.js context (the orchestrator's environment)
+import * as orchestrator from '@/lib/orchestration';
 
 // Or use direct fetch calls if TypeScript module isn't available
 ```
@@ -22,7 +22,7 @@ import * as charlie from '@/lib/charlie-orchestration';
 **Immediately after spawning**, register the session:
 
 ```typescript
-await charlie.onSubAgentSpawned({
+await orchestrator.onSubAgentSpawned({
   taskId: 'task-abc123',                           // From Mission Control task
   sessionId: 'agent:main:subagent:xyz789',         // Sub-agent's OpenClaw session ID
   agentName: 'fix-mission-control-integration',    // Descriptive name
@@ -41,18 +41,18 @@ await charlie.onSubAgentSpawned({
 Log significant activities as work progresses:
 
 ```typescript
-await charlie.logActivity({
+await orchestrator.logActivity({
   taskId: 'task-abc123',
   activityType: 'updated',
   message: 'Fixed SSE broadcast in dispatch endpoint',
   metadata: { file: 'src/app/api/tasks/[id]/dispatch/route.ts' }
 });
 
-await charlie.logActivity({
+await orchestrator.logActivity({
   taskId: 'task-abc123',
   activityType: 'file_created',
   message: 'Created orchestration helper',
-  metadata: { file: 'src/lib/charlie-orchestration.ts' }
+  metadata: { file: 'src/lib/orchestration.ts' }
 });
 ```
 
@@ -68,7 +68,7 @@ await charlie.logActivity({
 **Before marking task as review**, log completion with deliverables:
 
 ```typescript
-await charlie.onSubAgentCompleted({
+await orchestrator.onSubAgentCompleted({
   taskId: 'task-abc123',
   sessionId: 'agent:main:subagent:xyz789',
   agentName: 'fix-mission-control-integration',
@@ -82,7 +82,7 @@ await charlie.onSubAgentCompleted({
     {
       type: 'file',
       title: 'Orchestration helper',
-      path: 'src/lib/charlie-orchestration.ts'
+      path: 'src/lib/orchestration.ts'
     },
     {
       type: 'file',
@@ -105,7 +105,7 @@ await charlie.onSubAgentCompleted({
 **Before approving** (moving task from `review` → `done`), verify deliverables exist:
 
 ```typescript
-const hasDeliverables = await charlie.verifyTaskHasDeliverables('task-abc123');
+const hasDeliverables = await orchestrator.verifyTaskHasDeliverables('task-abc123');
 
 if (!hasDeliverables) {
   console.log('⚠️ Task has no deliverables - cannot approve');
@@ -119,14 +119,14 @@ await fetch('http://localhost:4000/api/tasks/task-abc123', {
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({
     status: 'done',
-    updated_by_agent_id: 'charlie-agent-id'  // Charlie's agent ID
+    updated_by_agent_id: 'orchestrator-agent-id'  // the orchestrator's agent ID
   })
 });
 ```
 
 **Backend validation:**
 - Endpoint will reject `review` → `done` transition if no deliverables
-- Only Charlie (master agent) can approve tasks
+- Only the master agent can approve tasks
 - This ensures quality control
 
 ## Direct API Usage (Without Helper)
@@ -206,7 +206,7 @@ const sessionId = await spawnSubAgent({
 });
 
 // 2. Register immediately
-await charlie.onSubAgentSpawned({
+await orchestrator.onSubAgentSpawned({
   taskId: task.id,
   sessionId: sessionId,
   agentName: 'fix-integration',
@@ -217,7 +217,7 @@ await charlie.onSubAgentSpawned({
 // (Sub-agent does work)
 
 // 4. When complete, log everything
-await charlie.onSubAgentCompleted({
+await orchestrator.onSubAgentCompleted({
   taskId: task.id,
   sessionId: sessionId,
   agentName: 'fix-integration',
@@ -231,9 +231,9 @@ await charlie.onSubAgentCompleted({
 await updateTaskStatus(task.id, 'review');
 
 // 6. Verify and approve
-const hasDeliverables = await charlie.verifyTaskHasDeliverables(task.id);
+const hasDeliverables = await orchestrator.verifyTaskHasDeliverables(task.id);
 if (hasDeliverables) {
-  await updateTaskStatus(task.id, 'done', { updated_by_agent_id: charlieId });
+  await updateTaskStatus(task.id, 'done', { updated_by_agent_id: orchestratorId });
 } else {
   console.log('⚠️ Cannot approve - no deliverables');
 }

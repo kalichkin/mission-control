@@ -6,6 +6,20 @@ import { getMissionControlUrl } from '@/lib/config';
 import { UpdateTaskSchema } from '@/lib/validation';
 import type { Task, UpdateTaskRequest, Agent, TaskDeliverable } from '@/lib/types';
 
+// Normalize flat agent fields into nested assigned_agent shape for SSE broadcasts
+function normalizeTask(task: Task & { assigned_agent_name?: string; assigned_agent_emoji?: string }): Task {
+  return {
+    ...task,
+    assigned_agent: task.assigned_agent_id
+      ? {
+          id: task.assigned_agent_id,
+          name: task.assigned_agent_name,
+          avatar_emoji: task.assigned_agent_emoji,
+        } as Agent
+      : undefined,
+  };
+}
+
 // GET /api/tasks/[id] - Get a single task
 export async function GET(
   request: NextRequest,
@@ -27,7 +41,7 @@ export async function GET(
       return NextResponse.json({ error: 'Task not found' }, { status: 404 });
     }
 
-    return NextResponse.json(task);
+    return NextResponse.json(normalizeTask(task as Task & { assigned_agent_name?: string; assigned_agent_emoji?: string }));
   } catch (error) {
     console.error('Failed to fetch task:', error);
     return NextResponse.json({ error: 'Failed to fetch task' }, { status: 500 });
@@ -165,11 +179,11 @@ export async function PATCH(
       [id]
     );
 
-    // Broadcast task update via SSE
+    // Broadcast task update via SSE (normalize to nested assigned_agent shape)
     if (task) {
       broadcast({
         type: 'task_updated',
-        payload: task,
+        payload: normalizeTask(task as Task & { assigned_agent_name?: string; assigned_agent_emoji?: string }),
       });
     }
 
@@ -190,7 +204,7 @@ export async function PATCH(
       });
     }
 
-    return NextResponse.json(task);
+    return NextResponse.json(normalizeTask(task as Task & { assigned_agent_name?: string; assigned_agent_emoji?: string }));
   } catch (error) {
     console.error('Failed to update task:', error);
     return NextResponse.json({ error: 'Failed to update task' }, { status: 500 });

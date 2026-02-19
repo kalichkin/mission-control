@@ -5,6 +5,20 @@ import { broadcast } from '@/lib/events';
 import { CreateTaskSchema } from '@/lib/validation';
 import type { Task, CreateTaskRequest, Agent } from '@/lib/types';
 
+// Normalize flat agent fields into nested assigned_agent shape for SSE broadcasts
+function normalizeTask(task: Task & { assigned_agent_name?: string; assigned_agent_emoji?: string }): Task {
+  return {
+    ...task,
+    assigned_agent: task.assigned_agent_id
+      ? {
+          id: task.assigned_agent_id,
+          name: task.assigned_agent_name,
+          avatar_emoji: task.assigned_agent_emoji,
+        } as Agent
+      : undefined,
+  };
+}
+
 // GET /api/tasks - List all tasks with optional filters
 export async function GET(request: NextRequest) {
   try {
@@ -145,15 +159,15 @@ export async function POST(request: NextRequest) {
       [id]
     );
     
-    // Broadcast task creation via SSE
+    // Broadcast task creation via SSE (normalize to nested assigned_agent shape)
     if (task) {
       broadcast({
         type: 'task_created',
-        payload: task,
+        payload: normalizeTask(task as Task & { assigned_agent_name?: string; assigned_agent_emoji?: string }),
       });
     }
     
-    return NextResponse.json(task, { status: 201 });
+    return NextResponse.json(normalizeTask(task as Task & { assigned_agent_name?: string; assigned_agent_emoji?: string }), { status: 201 });
   } catch (error) {
     console.error('Failed to create task:', error);
     return NextResponse.json({ error: 'Failed to create task' }, { status: 500 });

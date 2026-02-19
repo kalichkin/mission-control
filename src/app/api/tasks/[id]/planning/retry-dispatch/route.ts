@@ -69,11 +69,11 @@ export async function POST(
           WHERE id = ?
         `, [taskId]);
       } else {
-        // Store the error for display, keep as 'pending_dispatch'
+        // Store the error for display, fall back to 'planning' (visible in UI)
         run(`
           UPDATE tasks 
           SET planning_dispatch_error = ?,
-              status = 'pending_dispatch',
+              status = 'planning',
               updated_at = datetime('now')
           WHERE id = ?
         `, [result.error, taskId]);

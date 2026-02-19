@@ -1,12 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb, queryAll, queryOne, run } from '@/lib/db';
-import { getOpenClawClient } from '@/lib/openclaw/client';
 import { broadcast } from '@/lib/events';
 import { extractJSON } from '@/lib/planning-utils';
-// File system imports removed - using OpenClaw API instead
-
-// Planning session prefix for OpenClaw (must match agent:main: format)
-const PLANNING_SESSION_PREFIX = 'agent:main:planning:';
+import { callPlanningLLM, buildPlanningPrompt, getPlanningSessionKey } from '@/lib/planning-llm';
 
 // GET /api/tasks/[id]/planning - Get planning state
 export async function GET(
@@ -92,8 +88,7 @@ export async function POST(
       return NextResponse.json({ error: 'Planning already started', sessionKey: task.planning_session_key }, { status: 400 });
     }
 
-    // Check if there are other orchestrators available before starting planning with the default master agent
-    // Get the default master agent for this workspace
+    // Check if there are other orchestrators available
     const defaultMaster = queryOne<{ id: string }>(
       `SELECT id FROM agents WHERE is_master = 1 AND workspace_id = ? ORDER BY created_at ASC LIMIT 1`,
       [task.workspace_id]
@@ -118,65 +113,51 @@ export async function POST(
         error: 'Other orchestrators available',
         message: `There ${otherOrchestrators.length === 1 ? 'is' : 'are'} ${otherOrchestrators.length} other orchestrator${otherOrchestrators.length === 1 ? '' : 's'} available in this workspace: ${otherOrchestrators.map(o => o.name).join(', ')}. Please assign this task to them directly.`,
         otherOrchestrators,
-      }, { status: 409 }); // 409 Conflict
+      }, { status: 409 });
     }
 
-    // Create session key for this planning task
-    const sessionKey = `${PLANNING_SESSION_PREFIX}${taskId}`;
+    // Session key routes to scout agent (not main)
+    const sessionKey = getPlanningSessionKey(taskId);
 
-    // Build the initial planning prompt
-    const planningPrompt = `PLANNING REQUEST
+    // Build the planning prompt
+    const planningPrompt = buildPlanningPrompt(task.title, task.description);
 
-Task Title: ${task.title}
-Task Description: ${task.description || 'No description provided'}
+    // Send to scout agent and wait for response
+    console.log('[Planning] Starting planning via scout agent for task:', taskId);
+    const response = await callPlanningLLM(taskId, planningPrompt);
 
-You are starting a planning session for this task. Read PLANNING.md for your protocol.
+    // Store user prompt and assistant response
+    const messages = [
+      { role: 'user', content: planningPrompt, timestamp: Date.now() },
+      { role: 'assistant', content: response, timestamp: Date.now() },
+    ];
 
-Generate your FIRST question to understand what the user needs. Remember:
-- Questions must be multiple choice
-- Include an "Other" option
-- Be specific to THIS task, not generic
-
-Respond with ONLY valid JSON in this format:
-{
-  "question": "Your question here?",
-  "options": [
-    {"id": "A", "label": "First option"},
-    {"id": "B", "label": "Second option"},
-    {"id": "C", "label": "Third option"},
-    {"id": "other", "label": "Other"}
-  ]
-}`;
-
-    // Connect to OpenClaw and send the planning request
-    const client = getOpenClawClient();
-    if (!client.isConnected()) {
-      await client.connect();
+    // Parse the response to extract the question
+    const parsed = extractJSON(response);
+    let currentQuestion = null;
+    if (parsed && 'question' in parsed) {
+      currentQuestion = parsed;
     }
 
-    // Send planning request to the planning session
-    await client.call('chat.send', {
-      sessionKey: sessionKey,
-      message: planningPrompt,
-      idempotencyKey: `planning-start-${taskId}-${Date.now()}`,
-    });
-
-    // Store the session key and initial message
-    const messages = [{ role: 'user', content: planningPrompt, timestamp: Date.now() }];
-
+    // Update task with planning state
     getDb().prepare(`
       UPDATE tasks
       SET planning_session_key = ?, planning_messages = ?, status = 'planning'
       WHERE id = ?
     `).run(sessionKey, JSON.stringify(messages), taskId);
 
-    // Return immediately - frontend will poll for updates
-    // This eliminates the aggressive polling loop that was making 30+ OpenClaw API calls
+    // Broadcast task update
+    const updatedTask = queryOne('SELECT * FROM tasks WHERE id = ?', [taskId]);
+    if (updatedTask) {
+      broadcast({ type: 'task_updated', payload: updatedTask as any });
+    }
+
     return NextResponse.json({
       success: true,
       sessionKey,
       messages,
-      note: 'Planning started. Poll GET endpoint for updates.',
+      currentQuestion,
+      note: 'Planning started with direct LLM. First question ready.',
     });
   } catch (error) {
     console.error('Failed to start planning:', error);
@@ -224,7 +205,7 @@ export async function DELETE(
     if (updatedTask) {
       broadcast({
         type: 'task_updated',
-        payload: updatedTask as any, // Cast to any to satisfy SSEEvent payload union type
+        payload: updatedTask as any,
       });
     }
 

@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '@/lib/db';
-import { getOpenClawClient } from '@/lib/openclaw/client';
+import { getDb, queryOne, run } from '@/lib/db';
 import { extractJSON } from '@/lib/planning-utils';
+import { callPlanningLLM, getPlanningSessionKey } from '@/lib/planning-llm';
+import { broadcast } from '@/lib/events';
+import { Task } from '@/lib/types';
 
 // POST /api/tasks/[id]/planning/answer - Submit an answer and get next question
 export async function POST(
@@ -23,8 +25,10 @@ export async function POST(
       id: string;
       title: string;
       description: string;
+      workspace_id: string;
       planning_session_key?: string;
       planning_messages?: string;
+      planning_complete?: number;
     } | undefined;
 
     if (!task) {
@@ -35,76 +39,89 @@ export async function POST(
       return NextResponse.json({ error: 'Planning not started' }, { status: 400 });
     }
 
+    if (task.planning_complete) {
+      return NextResponse.json({ error: 'Planning already complete' }, { status: 400 });
+    }
+
     // Build the answer message
     const answerText = answer === 'other' && otherText 
       ? `Other: ${otherText}`
       : answer;
 
+    // Parse existing messages and build conversation for LLM
+    const messages = task.planning_messages ? JSON.parse(task.planning_messages) : [];
+    
+    // Add user answer
     const answerPrompt = `User's answer: ${answerText}
 
-Based on this answer and the conversation so far, either:
-1. Ask your next question (if you need more information)
-2. Complete the planning (if you have enough information)
+Based on this answer and the conversation so far, either ask your next question or complete the planning.
 
-For another question, respond with JSON:
-{
-  "question": "Your next question?",
-  "options": [
-    {"id": "A", "label": "Option A"},
-    {"id": "B", "label": "Option B"},
-    {"id": "other", "label": "Other"}
-  ]
-}
+RULES:
+- Respond with ONLY valid JSON. No markdown, no explanation, no code blocks.
+- Start your response with { and end with }
+- If you need more info, ask another multiple-choice question
+- If you have enough info (after 3-5 questions total), produce the completion spec
+- Always include an "other" option in questions
 
-If planning is complete, respond with JSON:
-{
-  "status": "complete",
-  "spec": {
-    "title": "Task title",
-    "summary": "Summary of what needs to be done",
-    "deliverables": ["List of deliverables"],
-    "success_criteria": ["How we know it's done"],
-    "constraints": {}
-  },
-  "agents": [
-    {
-      "name": "Agent Name",
-      "role": "Agent role",
-      "avatar_emoji": "🎯",
-      "soul_md": "Agent personality...",
-      "instructions": "Specific instructions..."
-    }
-  ],
-  "execution_plan": {
-    "approach": "How to execute",
-    "steps": ["Step 1", "Step 2"]
-  }
-}`;
+For a question:
+{"question":"Your next question?","options":[{"id":"a","label":"Option A"},{"id":"b","label":"Option B"},{"id":"other","label":"Other"}]}
 
-    // Parse existing messages
-    const messages = task.planning_messages ? JSON.parse(task.planning_messages) : [];
-    messages.push({ role: 'user', content: answerText, timestamp: Date.now() });
+For completion:
+{"status":"complete","spec":{"title":"Task title","summary":"What needs to be done","deliverables":["Deliverable 1"],"success_criteria":["How we know it is done"],"constraints":{}},"agents":[{"name":"Agent Name","role":"Role","avatar_emoji":"emoji","soul_md":"Personality","instructions":"Instructions"}],"execution_plan":{"approach":"How to execute","steps":["Step 1","Step 2"]}}`;
 
-    // Connect to OpenClaw and send the answer
-    const client = getOpenClawClient();
-    if (!client.isConnected()) {
-      console.log('[Planning Answer] Connecting to OpenClaw...');
-      await client.connect();
-    }
+    messages.push({ role: 'user', content: answerPrompt, timestamp: Date.now() });
 
-    console.log('[Planning Answer] Sending answer to OpenClaw, session:', task.planning_session_key);
-    console.log('[Planning Answer] Answer text:', answerText);
+    console.log('[Planning Answer] Sending answer to scout agent for task:', taskId);
 
-    try {
-      const sendResult = await client.call('chat.send', {
-        sessionKey: task.planning_session_key,
-        message: answerPrompt,
-        idempotencyKey: `planning-answer-${taskId}-${Date.now()}`,
+    // Send to scout agent and wait for response
+    const response = await callPlanningLLM(taskId, answerPrompt);
+
+    // Add assistant response to messages
+    messages.push({ role: 'assistant', content: response, timestamp: Date.now() });
+
+    // Parse the response
+    const parsed = extractJSON(response) as {
+      status?: string;
+      question?: string;
+      options?: Array<{ id: string; label: string }>;
+      spec?: object;
+      agents?: Array<{
+        name: string;
+        role: string;
+        avatar_emoji?: string;
+        soul_md?: string;
+        instructions?: string;
+      }>;
+      execution_plan?: object;
+    } | null;
+
+    console.log('[Planning Answer] Parsed response:', {
+      hasStatus: !!parsed?.status,
+      hasQuestion: !!parsed?.question,
+      status: parsed?.status,
+    });
+
+    // Check if planning is complete
+    if (parsed && parsed.status === 'complete') {
+      console.log('[Planning Answer] Planning complete, handling completion...');
+      const { firstAgentId, dispatchError } = await handlePlanningCompletion(taskId, parsed, messages);
+
+      return NextResponse.json({
+        success: true,
+        complete: true,
+        spec: parsed.spec,
+        agents: parsed.agents,
+        executionPlan: parsed.execution_plan,
+        messages,
+        autoDispatched: !!firstAgentId,
+        dispatchError,
       });
-      console.log('[Planning Answer] Send successful, result:', sendResult);
-    } catch (sendError) {
-      console.error('[Planning Answer] Failed to send to OpenClaw:', sendError);
-      return NextResponse.json({ error: 'Failed to send answer to orchestrator: ' + (sendError as Error).message }, { status: 500 });
+    }
+
+    // Extract current question
+    let currentQuestion = null;
+    if (parsed && parsed.question && parsed.options) {
+      currentQuestion = parsed;
     }
 
     // Update messages in DB
@@ -112,18 +129,62 @@ If planning is complete, respond with JSON:
       UPDATE tasks SET planning_messages = ? WHERE id = ?
     `).run(JSON.stringify(messages), taskId);
 
-    // Poll for response via OpenClaw API - removed aggressive polling
-    // Return immediately and let frontend poll for updates
-    // This eliminates 30 OpenClaw API calls per answer submission
-
-
     return NextResponse.json({
       success: true,
+      complete: false,
       messages,
-      note: 'Answer submitted. Poll GET endpoint for updates.',
+      currentQuestion,
     });
   } catch (error) {
     console.error('Failed to submit answer:', error);
     return NextResponse.json({ error: 'Failed to submit answer: ' + (error as Error).message }, { status: 500 });
   }
+}
+
+// Handle planning completion (same logic as was in poll/route.ts)
+async function handlePlanningCompletion(taskId: string, parsed: any, messages: any[]) {
+  const db = getDb();
+  const dispatchError: string | null = null;
+  const firstAgentId: string | null = null;
+
+  const transaction = db.transaction(() => {
+    db.prepare(`
+      UPDATE tasks
+      SET planning_messages = ?,
+          planning_spec = ?,
+          planning_agents = ?,
+          status = 'planning',
+          planning_dispatch_error = NULL
+      WHERE id = ?
+    `).run(
+      JSON.stringify(messages),
+      JSON.stringify(parsed.spec),
+      JSON.stringify(parsed.agents),
+      taskId
+    );
+
+    // NOTE: We intentionally do NOT create real agent records from planning suggestions.
+    // Planning-suggested agents are stored in planning_agents JSON for reference only.
+    // Real dispatch should be done by assigning the task to an existing registered agent.
+    // Creating ghost agents pollutes the agent dropdown and dispatching to them fails
+    // (no openclaw_agent_id → messages go nowhere).
+
+    return null; // No auto-dispatch to planning-suggested agents
+  });
+
+  transaction();
+
+  // Planning complete — move task to inbox for manual agent assignment.
+  // No auto-dispatch: the user/orchestrator assigns to a real registered agent.
+  db.prepare(`
+    UPDATE tasks SET planning_complete = 1, status = 'inbox', planning_dispatch_error = NULL, updated_at = datetime('now') WHERE id = ?
+  `).run(taskId);
+
+  // Broadcast
+  const updatedTask = queryOne<Task>('SELECT * FROM tasks WHERE id = ?', [taskId]);
+  if (updatedTask) {
+    broadcast({ type: 'task_updated', payload: updatedTask });
+  }
+
+  return { firstAgentId: null, parsed, dispatchError: null };
 }

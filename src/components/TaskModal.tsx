@@ -24,6 +24,10 @@ export function TaskModal({ task, onClose, workspaceId }: TaskModalProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showAgentModal, setShowAgentModal] = useState(false);
   const [usePlanningMode, setUsePlanningMode] = useState(false);
+  // Track newly created task when planning mode keeps modal open
+  const [editingCreatedTask, setEditingCreatedTask] = useState<Task | null>(null);
+  // The effective task is the prop OR the newly created one (for planning mode)
+  const effectiveTask = task || editingCreatedTask;
   // Auto-switch to planning tab if task is in planning status
   const [activeTab, setActiveTab] = useState<TabType>(task?.status === 'planning' ? 'planning' : 'overview');
 
@@ -96,24 +100,26 @@ export function TaskModal({ task, onClose, workspaceId }: TaskModalProps) {
             created_at: new Date().toISOString(),
           });
 
-          // If planning mode is enabled, auto-generate questions and keep modal open
+          // If planning mode is enabled, start planning and keep modal open
           if (usePlanningMode) {
-            // Trigger question generation in background
-            fetch(`/api/tasks/${savedTask.id}/planning`, { method: 'POST' })
-              .then((res) => {
-                if (res.ok) {
-                  // Update our local task reference and switch to planning tab
-                  updateTask({ ...savedTask, status: 'planning' });
-                  setActiveTab('planning');
-                } else {
-                  return res.json().then((data) => {
-                    console.error('Failed to start planning:', data.error);
-                  });
-                }
-              })
-              .catch((error) => {
-                console.error('Failed to start planning:', error);
-              });
+            // Store the saved task so the modal can switch to edit mode
+            setEditingCreatedTask(savedTask);
+            setActiveTab('planning');
+
+            // Start planning session (awaited so questions appear before user can interact)
+            try {
+              const planRes = await fetch(`/api/tasks/${savedTask.id}/planning`, { method: 'POST' });
+              if (planRes.ok) {
+                updateTask({ ...savedTask, status: 'planning' });
+              } else {
+                const data = await planRes.json();
+                console.error('Failed to start planning:', data.error);
+              }
+            } catch (error) {
+              console.error('Failed to start planning:', error);
+            }
+            // Don't close modal — user stays to answer planning questions
+            return;
           }
           onClose();
         }
@@ -158,7 +164,7 @@ export function TaskModal({ task, onClose, workspaceId }: TaskModalProps) {
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-mc-border flex-shrink-0">
           <h2 className="text-lg font-semibold">
-            {task ? task.title : 'Create New Task'}
+            {effectiveTask ? effectiveTask.title : 'Create New Task'}
           </h2>
           <button
             onClick={onClose}
@@ -168,8 +174,8 @@ export function TaskModal({ task, onClose, workspaceId }: TaskModalProps) {
           </button>
         </div>
 
-        {/* Tabs - only show for existing tasks */}
-        {task && (
+        {/* Tabs - show for existing tasks or newly created planning tasks */}
+        {effectiveTask && (
           <div className="flex border-b border-mc-border flex-shrink-0">
             {tabs.map((tab) => (
               <button
@@ -317,26 +323,26 @@ export function TaskModal({ task, onClose, workspaceId }: TaskModalProps) {
           )}
 
           {/* Planning Tab */}
-          {activeTab === 'planning' && task && (
+          {activeTab === 'planning' && effectiveTask && (
             <PlanningTab
-              taskId={task.id}
+              taskId={effectiveTask.id}
               onSpecLocked={handleSpecLocked}
             />
           )}
 
           {/* Activity Tab */}
-          {activeTab === 'activity' && task && (
-            <ActivityLog taskId={task.id} />
+          {activeTab === 'activity' && effectiveTask && (
+            <ActivityLog taskId={effectiveTask.id} />
           )}
 
           {/* Deliverables Tab */}
-          {activeTab === 'deliverables' && task && (
-            <DeliverablesList taskId={task.id} />
+          {activeTab === 'deliverables' && effectiveTask && (
+            <DeliverablesList taskId={effectiveTask.id} />
           )}
 
           {/* Sessions Tab */}
-          {activeTab === 'sessions' && task && (
-            <SessionsList taskId={task.id} />
+          {activeTab === 'sessions' && effectiveTask && (
+            <SessionsList taskId={effectiveTask.id} />
           )}
         </div>
 

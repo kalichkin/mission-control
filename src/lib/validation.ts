@@ -29,11 +29,11 @@ export const CreateTaskSchema = z.object({
   description: z.string().max(10000, 'Description must be 10000 characters or less').optional(),
   status: TaskStatus.optional(),
   priority: TaskPriority.optional(),
-  assigned_agent_id: z.string().uuid().optional(),
-  created_by_agent_id: z.string().uuid().optional(),
-  business_id: z.string().optional(),
-  workspace_id: z.string().optional(),
-  due_date: z.string().optional(),
+  assigned_agent_id: z.string().uuid().nullish().or(z.literal('')).transform(v => v || undefined),
+  created_by_agent_id: z.string().uuid().nullish().or(z.literal('')).transform(v => v || undefined),
+  business_id: z.string().nullish().transform(v => v || undefined),
+  workspace_id: z.string().nullish().transform(v => v || undefined),
+  due_date: z.string().nullish().transform(v => v || undefined),
 });
 
 export const UpdateTaskSchema = z.object({

@@ -177,9 +177,14 @@ export async function PATCH(
     if (shouldDispatch) {
       // Call dispatch endpoint asynchronously (don't wait for response)
       const missionControlUrl = getMissionControlUrl();
+      const mcApiToken = process.env.MC_API_TOKEN;
+      const dispatchHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (mcApiToken) {
+        dispatchHeaders['Authorization'] = `Bearer ${mcApiToken}`;
+      }
       fetch(`${missionControlUrl}/api/tasks/${id}/dispatch`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
+        headers: dispatchHeaders
       }).catch(err => {
         console.error('Auto-dispatch failed:', err);
       });

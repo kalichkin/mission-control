@@ -33,6 +33,7 @@ export interface Agent {
   user_md?: string;
   agents_md?: string;
   model?: string;
+  openclaw_agent_id?: string; // Maps to OpenClaw agent id for dispatch routing
   created_at: string;
   updated_at: string;
 }

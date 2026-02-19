@@ -203,11 +203,17 @@ export function PlanningTab({ taskId, onSpecLocked }: PlanningTabProps) {
           ...prev!,
           sessionKey: data.sessionKey,
           messages: data.messages || [],
+          currentQuestion: data.currentQuestion || undefined,
           isStarted: true,
         }));
 
-        // Start polling for the first question
-        startPolling();
+        // If we got the question directly in the response, no need to poll
+        if (data.currentQuestion) {
+          currentQuestionRef.current = data.currentQuestion.question;
+        } else {
+          // Fallback: start polling for the first question
+          startPolling();
+        }
       } else {
         setError(data.error || 'Failed to start planning');
       }
@@ -243,20 +249,48 @@ export function PlanningTab({ taskId, onSpecLocked }: PlanningTabProps) {
       const data = await res.json();
 
       if (res.ok) {
-        // Start polling for the next question or completion
-        // Don't clear selection yet - keep it visible while waiting for response
-        startPolling();
+        // Check if the response includes the next question directly (synchronous mode)
+        if (data.currentQuestion || data.complete) {
+          setState(prev => ({
+            ...prev!,
+            messages: data.messages || prev?.messages || [],
+            currentQuestion: data.currentQuestion || undefined,
+            isComplete: data.complete || false,
+            spec: data.spec || prev?.spec,
+            agents: data.agents || prev?.agents,
+            dispatchError: data.dispatchError,
+          }));
+
+          if (data.currentQuestion) {
+            currentQuestionRef.current = data.currentQuestion.question;
+          }
+
+          // Clear selection for the new question
+          setSelectedOption(null);
+          setOtherText('');
+          setIsSubmittingAnswer(false);
+          setIsWaitingForResponse(false);
+
+          if (data.complete && onSpecLocked) {
+            onSpecLocked();
+          }
+
+          if (data.dispatchError) {
+            setError(`Planning completed but dispatch failed: ${data.dispatchError}`);
+          }
+        } else {
+          // Fallback: start polling for the next question or completion
+          startPolling();
+        }
       } else {
         setError(data.error || 'Failed to submit answer');
-        setIsSubmittingAnswer(false); // Clear submitting state on error
-        // Clear selection on error so user can try again
+        setIsSubmittingAnswer(false);
         setSelectedOption(null);
         setOtherText('');
       }
     } catch (err) {
       setError('Failed to submit answer');
-      setIsSubmittingAnswer(false); // Clear submitting state on error
-      // Clear selection on error so user can try again
+      setIsSubmittingAnswer(false);
       setSelectedOption(null);
       setOtherText('');
     } finally {

@@ -187,6 +187,34 @@ export async function PATCH(
       });
     }
 
+    // Sync agent status based on task status change
+    if (validatedData.status !== undefined && validatedData.status !== existing.status) {
+      const agentId = validatedData.assigned_agent_id || existing.assigned_agent_id;
+      if (agentId) {
+        if (validatedData.status === 'in_progress') {
+          // Agent starts working
+          run('UPDATE agents SET status = ?, updated_at = ? WHERE id = ?', ['working', now, agentId]);
+          const agentObj = queryOne<Agent>('SELECT name FROM agents WHERE id = ?', [agentId]);
+          run('INSERT INTO events (id, type, agent_id, message, created_at) VALUES (?, ?, ?, ?, ?)',
+            [uuidv4(), 'agent_status_changed', agentId, `${agentObj?.name || 'Agent'} is now working`, now]);
+          broadcast({ type: 'agent_status_changed', payload: { agent_id: agentId, status: 'working' } });
+        } else if (['done', 'review', 'inbox', 'testing'].includes(validatedData.status)) {
+          // Check if agent has any OTHER in_progress tasks
+          const otherActive = queryOne<{ cnt: number }>(
+            'SELECT COUNT(*) as cnt FROM tasks WHERE assigned_agent_id = ? AND status = ? AND id != ?',
+            [agentId, 'in_progress', id]
+          );
+          if (!otherActive || otherActive.cnt === 0) {
+            run('UPDATE agents SET status = ?, updated_at = ? WHERE id = ?', ['standby', now, agentId]);
+            const agentObj = queryOne<Agent>('SELECT name FROM agents WHERE id = ?', [agentId]);
+            run('INSERT INTO events (id, type, agent_id, message, created_at) VALUES (?, ?, ?, ?, ?)',
+              [uuidv4(), 'agent_status_changed', agentId, `${agentObj?.name || 'Agent'} is now standby`, now]);
+            broadcast({ type: 'agent_status_changed', payload: { agent_id: agentId, status: 'standby' } });
+          }
+        }
+      }
+    }
+
     // Trigger auto-dispatch if needed
     if (shouldDispatch) {
       // Call dispatch endpoint asynchronously (don't wait for response)

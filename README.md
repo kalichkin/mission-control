@@ -83,7 +83,7 @@
 
 ```bash
 # Clone
-git clone https://github.com/crshdn/mission-control.git
+git clone https://github.com/kalichkin/mission-control.git
 cd mission-control
 
 # Install dependencies
@@ -252,6 +252,47 @@ mission-control/
 ├── src/middleware.ts            # Auth middleware
 ├── .env.example                # Environment template
 └── CHANGELOG.md                # Version history
+```
+
+---
+
+## 🛠 Fork Improvements
+
+This fork ([kalichkin/mission-control](https://github.com/kalichkin/mission-control)) includes the following fixes and enhancements over the upstream [crshdn/mission-control](https://github.com/crshdn/mission-control):
+
+### Bug Fixes
+- **Auth headers on internal dispatch** — Server-side auto-dispatch calls were missing `Authorization` headers, causing 401 errors when `MC_API_TOKEN` was set
+- **Ghost agents from planning** — Planning completion was creating orphan agent records; now suggestions stay in JSON only
+- **Planning modal closes prematurely** — Modal no longer closes before planning questions finish loading
+- **`pending_dispatch` invisible tasks** — Tasks no longer get stuck in an invisible status; falls back to `planning` on dispatch failure
+- **Normalized API responses** — All endpoints (GET, POST, PATCH) now return consistent `assigned_agent: {name, emoji}` objects instead of flat fields
+
+### Enhancements
+- **Server-side agent status sync** — Changing task status via UI/API now automatically updates agent status (working/standby) with SSE broadcast
+- **Completion protocol** — Dispatch messages instruct agents to use `review` status (not `done`) and log activities/deliverables
+
+### CLI Wrapper (`mc.sh`)
+
+A Bash CLI wrapper is included for agent-side task management:
+
+```bash
+# Create and dispatch tasks
+mc.sh create-task "Title" "Description" agent_name
+mc.sh dispatch <task_id> "<session_id>"
+
+# Update status
+mc.sh update-status <task_id> in_progress|review|done|testing|inbox|planning|assigned
+
+# Log work
+mc.sh log-activity <task_id> "What was done"
+mc.sh log-deliverable <task_id> "Title" "Description"
+
+# Complete a task (activity + deliverable + review + agent reset)
+mc.sh complete-task <task_id> "Summary" ["Deliverable title" "Deliverable desc"]
+
+# Query
+mc.sh list-tasks [status]
+mc.sh list-agents
 ```
 
 ---

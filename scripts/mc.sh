@@ -13,8 +13,8 @@
 set -euo pipefail
 
 MC_URL="${MISSION_CONTROL_URL:-http://localhost:4000}"
-MC_TOKEN="${MISSION_CONTROL_TOKEN:-YOUR_MC_API_TOKEN_HERE}"
-MC_WORKSPACE="${MISSION_CONTROL_WORKSPACE:-YOUR_WORKSPACE_ID_HERE}"
+MC_TOKEN="${MISSION_CONTROL_TOKEN:?Set MISSION_CONTROL_TOKEN env var or edit this file}"
+MC_WORKSPACE="${MISSION_CONTROL_WORKSPACE:?Set MISSION_CONTROL_WORKSPACE env var or edit this file}"
 
 auth_header="Authorization: Bearer $MC_TOKEN"
 content_type="Content-Type: application/json"

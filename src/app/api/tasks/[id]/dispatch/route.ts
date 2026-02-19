@@ -155,13 +155,21 @@ ${task.due_date ? `**Due:** ${task.due_date}\n` : ''}
 **OUTPUT DIRECTORY:** ${taskProjectDir}
 Create this directory and save all deliverables there.
 
-**IMPORTANT:** After completing work, you MUST call these APIs:
-1. Log activity: POST ${missionControlUrl}/api/tasks/${task.id}/activities
-   Body: {"activity_type": "completed", "message": "Description of what was done"}
-2. Register deliverable: POST ${missionControlUrl}/api/tasks/${task.id}/deliverables
-   Body: {"deliverable_type": "file", "title": "File name", "path": "${taskProjectDir}/filename.html"}
-3. Update status: PATCH ${missionControlUrl}/api/tasks/${task.id}
+**COMPLETION PROTOCOL (mandatory):**
+When you finish, run this ONE command (it logs activity, registers deliverable, and sets status to review):
+\`\`\`bash
+bash tools/mc.sh complete-task "${task.id}" "Summary of what you did" "Deliverable title" "Brief description of deliverable"
+\`\`\`
+
+Or if you prefer raw API calls:
+1. POST ${missionControlUrl}/api/tasks/${task.id}/activities
+   Body: {"activity_type": "completed", "message": "What was done"}
+2. POST ${missionControlUrl}/api/tasks/${task.id}/deliverables
+   Body: {"deliverable_type": "file", "title": "Filename", "path": "${taskProjectDir}/filename"}
+3. PATCH ${missionControlUrl}/api/tasks/${task.id}
    Body: {"status": "review"}
+
+**⚠️ NEVER set status to "done". Always "review". Only the human moves tasks to done.**
 
 When complete, reply with:
 \`TASK_COMPLETE: [brief summary of what you did]\`
